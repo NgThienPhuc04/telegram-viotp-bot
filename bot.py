@@ -2,8 +2,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-TOKEN = os.getenv("BOT_TOKEN")
-import os
 import json
 import logging
 import asyncio
@@ -15,10 +13,13 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load .env
+# Load biến môi trường từ .env
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
+
+# Chat ID để giữ bot hoạt động
+PING_CHAT_ID = 1262582104
 
 # File lưu token theo user
 USER_TOKEN_FILE = "user_tokens.json"
@@ -54,7 +55,6 @@ async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
 # ==== Command Handlers ====
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
 
@@ -205,6 +205,17 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
+# ==== Ping giữ bot sống ====
+async def ping_loop(application: Application):
+    await asyncio.sleep(15)
+    while True:
+        try:
+            await application.bot.send_message(PING_CHAT_ID, "🤖 Ping giữ bot hoạt động ⏰")
+        except Exception as e:
+            logger.error(f"Lỗi ping bot: {e}")
+        await asyncio.sleep(600)  # 10 phút
+
+# ==== Main ====
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -214,8 +225,15 @@ def main():
     app.add_handler(CommandHandler("rent", rent))
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
+
+    # Bắt đầu ping giữ bot sống
+    app.create_task(ping_loop(app))
+
     print("🤖 Bot đang chạy...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
