@@ -1,6 +1,3 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import os
 import json
 import logging
@@ -13,15 +10,12 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load biến môi trường từ .env
+# Load .env
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
 
-# Chat ID để giữ bot hoạt động
-PING_CHAT_ID = 1262582104
-
-# File lưu token theo user
+# File lưu token
 USER_TOKEN_FILE = "user_tokens.json"
 
 # Logger
@@ -55,6 +49,7 @@ async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
 # ==== Command Handlers ====
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
 
@@ -115,7 +110,7 @@ async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "phone": phone,
                 "token": token
             }
-            await send(update, f"📱 Số đã thuê: `{phone}`\n⌛ Đang chờ mã OTP...")
+            await send(update, f"📱 *Số đã thuê:* `{phone}`\n⌛ Đang chờ mã OTP...")
             asyncio.create_task(poll_otp(user_id, context))
         else:
             await send(update, f"❌ Lỗi thuê số: {data.get('message', '')}")
@@ -140,7 +135,7 @@ async def grab(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "phone": phone,
                 "token": token
             }
-            await send(update, f"📱 Grab thuê: `{phone}`\n⌛ Đang đợi OTP...")
+            await send(update, f"📱 *Grab thuê:* `{phone}`\n⌛ Đang đợi OTP...")
             asyncio.create_task(poll_otp(user_id, context))
         else:
             await send(update, f"❌ Lỗi thuê Grab: {data.get('message', '')}")
@@ -205,17 +200,9 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# ==== Ping giữ bot sống ====
-async def ping_loop(application: Application):
-    await asyncio.sleep(15)
-    while True:
-        try:
-            await application.bot.send_message(PING_CHAT_ID, "🤖 Ping giữ bot hoạt động ⏰")
-        except Exception as e:
-            logger.error(f"Lỗi ping bot: {e}")
-        await asyncio.sleep(600)  # 10 phút
+async def notify_startup(bot):
+    await bot.send_message(chat_id=1262582104, text="✅ Bot đã khởi động!")
 
-# ==== Main ====
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -226,14 +213,11 @@ def main():
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
 
-    # Bắt đầu ping giữ bot sống
-    app.create_task(ping_loop(app))
+    async def run():
+        await notify_startup(app.bot)
+        await app.run_polling()
 
-    print("🤖 Bot đang chạy...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    asyncio.run(run())
 
 if __name__ == "__main__":
     main()
