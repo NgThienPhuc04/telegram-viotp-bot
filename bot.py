@@ -10,22 +10,20 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load biến môi trường
+# Load env
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
 
-# File lưu token
+ADMIN_ID = 1262582104
 USER_TOKEN_FILE = "user_tokens.json"
-ADMIN_ID = 1262582104  # chỉ admin mới xem được /users
+user_sessions = {}
 
-# Logging
+# Logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-user_sessions = {}
-
-# === Token handler ===
+# ==== Token handling ====
 def load_user_tokens():
     if os.path.exists(USER_TOKEN_FILE):
         with open(USER_TOKEN_FILE, "r") as f:
@@ -45,13 +43,13 @@ def set_token(user_id, token):
     user_tokens[str(user_id)] = token
     save_user_tokens(user_tokens)
 
-# === Gửi tin nhắn ===
+# ==== Bot Message Utilities ====
 async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
-# === Lệnh cơ bản ===
+# ==== Command Handlers ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem lệnh.")
+    await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update,
@@ -73,10 +71,6 @@ async def add_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await send(update, "❌ Dùng: /addtoken YOUR_TOKEN")
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    token = get_token(update.effective_user.id)
-    await send(update, f"💰 {check_balance_raw(token)}")
-
 def check_balance_raw(token):
     try:
         res = requests.get("https://api.viotp.com/users/balance", params={"token": token}, timeout=5)
@@ -86,6 +80,10 @@ def check_balance_raw(token):
     except:
         pass
     return "Không thể lấy số dư"
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    token = get_token(update.effective_user.id)
+    await send(update, f"💰 {check_balance_raw(token)}")
 
 async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -200,8 +198,9 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# Lệnh chỉ dành riêng cho ADMIN
+# /users chỉ dành cho admin
 async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"[DEBUG] /users called by {update.effective_user.id}")
     if update.effective_user.id != ADMIN_ID:
         await send(update, "⛔ Bạn không có quyền sử dụng lệnh này.")
         return
@@ -217,16 +216,7 @@ async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "\n".join(lines)
     await send(update, "*Danh sách người dùng đã lưu token:*\n\n" + msg)
 
-# Ping để giữ bot sống
-async def ping_loop(app):
-    while True:
-        try:
-            await app.bot.send_message(chat_id=ADMIN_ID, text="🤖 Bot vẫn đang hoạt động.")
-        except Exception as e:
-            logger.error(f"Ping lỗi: {e}")
-        await asyncio.sleep(600)  # 10 phút
-
-async def run():
+def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -236,12 +226,8 @@ async def run():
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
     app.add_handler(CommandHandler("users", users))
-    asyncio.create_task(ping_loop(app))
     print("🤖 Bot đang chạy...")
-    await app.run_polling()
-
-def main():
-    asyncio.run(run())
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
