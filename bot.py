@@ -1,28 +1,31 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import os
 import json
 import logging
 import asyncio
 import requests
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load ENV
+# Load biến môi trường
+load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
-NOTIFY_CHAT_ID = int(os.getenv("NOTIFY_CHAT_ID", "1262582104"))
 
+# File lưu token
 USER_TOKEN_FILE = "user_tokens.json"
+ADMIN_ID = 1262582104  # chỉ admin mới xem được /users
+
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 user_sessions = {}
 
+# === Token handler ===
 def load_user_tokens():
     if os.path.exists(USER_TOKEN_FILE):
         with open(USER_TOKEN_FILE, "r") as f:
@@ -42,13 +45,13 @@ def set_token(user_id, token):
     user_tokens[str(user_id)] = token
     save_user_tokens(user_tokens)
 
-# Gửi tin nhắn
+# === Gửi tin nhắn ===
 async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
-# Lệnh
+# === Lệnh cơ bản ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
+    await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem lệnh.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update,
@@ -70,6 +73,10 @@ async def add_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await send(update, "❌ Dùng: /addtoken YOUR_TOKEN")
 
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    token = get_token(update.effective_user.id)
+    await send(update, f"💰 {check_balance_raw(token)}")
+
 def check_balance_raw(token):
     try:
         res = requests.get("https://api.viotp.com/users/balance", params={"token": token}, timeout=5)
@@ -79,10 +86,6 @@ def check_balance_raw(token):
     except:
         pass
     return "Không thể lấy số dư"
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    token = get_token(update.effective_user.id)
-    await send(update, f"💰 {check_balance_raw(token)}")
 
 async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -163,7 +166,6 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await send(update, f"⚠️ Lỗi: `{e}`")
 
-# 🔁 Kiểm tra OTP
 async def poll_otp(user_id, context):
     session = user_sessions.get(user_id)
     if not session:
@@ -198,26 +200,33 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# 🔔 Khi khởi động
-async def startup_notify(app: Application):
-    await app.bot.send_message(chat_id=NOTIFY_CHAT_ID, text="✅ Bot đã khởi động thành công!")
+# Lệnh chỉ dành riêng cho ADMIN
+async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await send(update, "⛔ Bạn không có quyền sử dụng lệnh này.")
+        return
+    if not user_tokens:
+        await send(update, "Không có người dùng nào đã lưu token.")
+        return
 
-# 🔁 Giữ bot sống bằng ping 10 phút/lần
-async def keep_alive(app: Application):
+    lines = []
+    for uid, token in user_tokens.items():
+        token_hidden = token[:6] + "..." + token[-4:]
+        lines.append(f"👤 ID: `{uid}` – 🔑 `{token_hidden}`")
+
+    msg = "\n".join(lines)
+    await send(update, "*Danh sách người dùng đã lưu token:*\n\n" + msg)
+
+# Ping để giữ bot sống
+async def ping_loop(app):
     while True:
         try:
-            await app.bot.send_message(chat_id=NOTIFY_CHAT_ID, text="✅ Ping để giữ bot sống!")
+            await app.bot.send_message(chat_id=ADMIN_ID, text="🤖 Bot vẫn đang hoạt động.")
         except Exception as e:
-            print(f"[KEEPALIVE ERROR] {e}")
+            logger.error(f"Ping lỗi: {e}")
         await asyncio.sleep(600)  # 10 phút
 
-# Gọi khi khởi động bot
-async def post_init(app: Application):
-    await startup_notify(app)
-    asyncio.create_task(keep_alive(app))
-
-# Main
-def main():
+async def run():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -226,9 +235,13 @@ def main():
     app.add_handler(CommandHandler("rent", rent))
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
-    app.post_init = post_init
+    app.add_handler(CommandHandler("users", users))
+    asyncio.create_task(ping_loop(app))
     print("🤖 Bot đang chạy...")
-    app.run_polling()
+    await app.run_polling()
+
+def main():
+    asyncio.run(run())
 
 if __name__ == "__main__":
     main()
