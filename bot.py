@@ -1,30 +1,28 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import json
 import logging
 import asyncio
 import requests
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load .env
-load_dotenv()
+# Load ENV
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
+NOTIFY_CHAT_ID = int(os.getenv("NOTIFY_CHAT_ID", "1262582104"))
 
-# File lưu token theo user
 USER_TOKEN_FILE = "user_tokens.json"
-
-# Logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 user_sessions = {}
 
-# ==== Token handling ====
 def load_user_tokens():
     if os.path.exists(USER_TOKEN_FILE):
         with open(USER_TOKEN_FILE, "r") as f:
@@ -44,12 +42,11 @@ def set_token(user_id, token):
     user_tokens[str(user_id)] = token
     save_user_tokens(user_tokens)
 
-# ==== Bot Message Utilities ====
+# Gửi tin nhắn
 async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
-# ==== Command Handlers ====
-
+# Lệnh
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
 
@@ -166,6 +163,7 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await send(update, f"⚠️ Lỗi: `{e}`")
 
+# 🔁 Kiểm tra OTP
 async def poll_otp(user_id, context):
     session = user_sessions.get(user_id)
     if not session:
@@ -200,13 +198,27 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# 🔔 Gửi thông báo khi khởi động bot
+# 🔔 Khi khởi động
 async def startup_notify(app: Application):
-    await app.bot.send_message(chat_id=1262582104, text="✅ Bot đã khởi động thành công!")
+    await app.bot.send_message(chat_id=NOTIFY_CHAT_ID, text="✅ Bot đã khởi động thành công!")
 
+# 🔁 Giữ bot sống bằng ping 10 phút/lần
+async def keep_alive(app: Application):
+    while True:
+        try:
+            await app.bot.send_message(chat_id=NOTIFY_CHAT_ID, text="✅ Ping để giữ bot sống!")
+        except Exception as e:
+            print(f"[KEEPALIVE ERROR] {e}")
+        await asyncio.sleep(600)  # 10 phút
+
+# Gọi khi khởi động bot
+async def post_init(app: Application):
+    await startup_notify(app)
+    asyncio.create_task(keep_alive(app))
+
+# Main
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("addtoken", add_token))
@@ -214,9 +226,7 @@ def main():
     app.add_handler(CommandHandler("rent", rent))
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
-
-    app.post_init = startup_notify
-
+    app.post_init = post_init
     print("🤖 Bot đang chạy...")
     app.run_polling()
 
