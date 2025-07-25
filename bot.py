@@ -10,12 +10,12 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load env
+# Load .env
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
-
 ADMIN_ID = 1262582104
+
 USER_TOKEN_FILE = "user_tokens.json"
 user_sessions = {}
 
@@ -32,16 +32,21 @@ def load_user_tokens():
 
 def save_user_tokens(tokens):
     with open(USER_TOKEN_FILE, "w") as f:
-        json.dump(tokens, f)
+        json.dump(tokens, f, indent=2)
 
 user_tokens = load_user_tokens()
 
-def get_token(user_id):
-    return user_tokens.get(str(user_id), DEFAULT_VIOTP_TOKEN)
+def get_latest_token(user_id):
+    tokens = user_tokens.get(str(user_id), [])
+    return tokens[-1] if tokens else DEFAULT_VIOTP_TOKEN
 
-def set_token(user_id, token):
-    user_tokens[str(user_id)] = token
-    save_user_tokens(user_tokens)
+def add_token_history(user_id, token):
+    uid = str(user_id)
+    if uid not in user_tokens:
+        user_tokens[uid] = []
+    if token not in user_tokens[uid]:
+        user_tokens[uid].append(token)
+        save_user_tokens(user_tokens)
 
 # ==== Bot Message Utilities ====
 async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
@@ -65,7 +70,7 @@ async def add_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
         token = update.message.text.split(" ", 1)[1].strip()
-        set_token(user_id, token)
+        add_token_history(user_id, token)
         balance = check_balance_raw(token)
         await send(update, f"✅ Token đã lưu!\n💰 {balance}")
     except:
@@ -82,12 +87,12 @@ def check_balance_raw(token):
     return "Không thể lấy số dư"
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    token = get_token(update.effective_user.id)
+    token = get_latest_token(update.effective_user.id)
     await send(update, f"💰 {check_balance_raw(token)}")
 
 async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    token = get_token(user_id)
+    token = get_latest_token(user_id)
     try:
         service_id = update.message.text.split(" ", 1)[1].strip()
     except:
@@ -117,7 +122,7 @@ async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def grab(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    token = get_token(user_id)
+    token = get_latest_token(user_id)
     try:
         res = requests.get("https://api.viotp.com/request/getv2", params={
             "token": token,
@@ -142,7 +147,7 @@ async def grab(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    token = get_token(user_id)
+    token = get_latest_token(user_id)
     try:
         keyword = update.message.text.split(" ", 1)[1].lower()
     except:
@@ -198,24 +203,26 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# /users chỉ dành cho admin
+# === ADMIN ONLY ===
 async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[DEBUG] /users called by {update.effective_user.id}")
     if update.effective_user.id != ADMIN_ID:
         await send(update, "⛔ Bạn không có quyền sử dụng lệnh này.")
         return
+
     if not user_tokens:
-        await send(update, "Không có người dùng nào đã lưu token.")
+        await send(update, "🚫 Không có người dùng nào đã lưu token.")
         return
 
-    lines = []
-    for uid, token in user_tokens.items():
-        token_hidden = token[:6] + "..." + token[-4:]
-        lines.append(f"👤 ID: `{uid}` – 🔑 `{token_hidden}`")
+    msg = "*Danh sách người dùng và token đã thêm:*\n\n"
+    for uid, tokens in user_tokens.items():
+        msg += f"👤 ID `{uid}`:\n"
+        for t in tokens:
+            msg += f"   - `{t}`\n"
+        msg += "\n"
 
-    msg = "\n".join(lines)
-    await send(update, "*Danh sách người dùng đã lưu token:*\n\n" + msg)
+    await send(update, msg)
 
+# ==== Main ====
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
