@@ -10,17 +10,19 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
+# ==== Load ENV ====
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
 ADMIN_ID = 1262582104
-
 USER_TOKEN_FILE = "user_tokens.json"
+
+# ==== Logger ====
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 user_sessions = {}
 
-# ==== Token handling ====
+# ==== Token Handling ====
 def load_user_tokens():
     if os.path.exists(USER_TOKEN_FILE):
         with open(USER_TOKEN_FILE, "r") as f:
@@ -54,7 +56,7 @@ def check_balance_raw(token):
 async def send(update: Update, text, parse_mode=ParseMode.MARKDOWN):
     await update.message.reply_text(text, parse_mode=parse_mode)
 
-# ==== Commands ====
+# ==== Command Handlers ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem các lệnh.")
 
@@ -210,14 +212,14 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-# ==== Ping loop to prevent sleep ====
+# ==== Ping loop to keep alive ====
 async def ping_loop(app):
     while True:
         await asyncio.sleep(300)
         await app.bot.send_message(chat_id=ADMIN_ID, text="p")
 
 # ==== Main ====
-async def run():
+async def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -231,16 +233,6 @@ async def run():
     asyncio.create_task(ping_loop(app))
     await app.run_polling()
 
-def main():
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(run())
-    except RuntimeError as e:
-        if "already running" in str(e):
-            loop = asyncio.get_event_loop()
-            loop.create_task(run())
-        else:
-            raise
-
+# === Entry point ===
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
