@@ -12,18 +12,13 @@ from telegram.ext import (
     Application, CommandHandler, ContextTypes
 )
 
-# Load từ .env
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
-
-# Tệp lưu token
-USER_TOKEN_FILE = "user_tokens.json"
 ADMIN_ID = 1262582104
+USER_TOKEN_FILE = "user_tokens.json"
 
-# Logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 user_sessions = {}
 
 def load_user_tokens():
@@ -58,7 +53,8 @@ def check_balance_raw(token):
         pass
     return "Không lấy được"
 
-# Các lệnh bot
+# --- Command Handlers ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send(update, "🤖 Bot Thuê Số VIOTP\nGõ /help để xem hướng dẫn.")
 
@@ -202,6 +198,16 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
+# 🔁 Gửi tin nhắn định kỳ để giữ kết nối
+async def ping_loop(bot):
+    while True:
+        try:
+            await bot.send_message(chat_id=ADMIN_ID, text="p")
+        except Exception as e:
+            logger.warning(f"Không gửi được ping: {e}")
+        await asyncio.sleep(300)  # 5 phút
+
+# Main
 async def run():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -213,6 +219,10 @@ async def run():
     app.add_handler(CommandHandler("search", search))
     app.add_handler(CommandHandler("user", user_info))
     app.add_handler(CommandHandler("users", all_users))
+
+    # 🟢 Bắt đầu ping loop
+    asyncio.create_task(ping_loop(app.bot))
+
     print("🤖 Bot đang chạy...")
     await app.run_polling()
 
