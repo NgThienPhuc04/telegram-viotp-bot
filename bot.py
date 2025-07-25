@@ -15,7 +15,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DEFAULT_VIOTP_TOKEN = os.getenv("VIOTP_API_TOKEN")
 
-# File lưu token
+# File lưu token theo user
 USER_TOKEN_FILE = "user_tokens.json"
 
 # Logger
@@ -110,7 +110,7 @@ async def rent(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "phone": phone,
                 "token": token
             }
-            await send(update, f"📱 *Số đã thuê:* `{phone}`\n⌛ Đang chờ mã OTP...")
+            await send(update, f"📱 Số đã thuê: `{phone}`\n⌛ Đang chờ mã OTP...")
             asyncio.create_task(poll_otp(user_id, context))
         else:
             await send(update, f"❌ Lỗi thuê số: {data.get('message', '')}")
@@ -135,7 +135,7 @@ async def grab(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "phone": phone,
                 "token": token
             }
-            await send(update, f"📱 *Grab thuê:* `{phone}`\n⌛ Đang đợi OTP...")
+            await send(update, f"📱 Grab thuê: `{phone}`\n⌛ Đang đợi OTP...")
             asyncio.create_task(poll_otp(user_id, context))
         else:
             await send(update, f"❌ Lỗi thuê Grab: {data.get('message', '')}")
@@ -200,11 +200,13 @@ async def poll_otp(user_id, context):
             continue
     await context.bot.send_message(chat_id=user_id, text="❌ Hết thời gian chờ OTP.")
 
-async def notify_startup(bot):
-    await bot.send_message(chat_id=1262582104, text="✅ Bot đã khởi động!")
+# 🔔 Gửi thông báo khi khởi động bot
+async def startup_notify(app: Application):
+    await app.bot.send_message(chat_id=1262582104, text="✅ Bot đã khởi động thành công!")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("addtoken", add_token))
@@ -213,11 +215,10 @@ def main():
     app.add_handler(CommandHandler("grab", grab))
     app.add_handler(CommandHandler("search", search))
 
-    async def run():
-        await notify_startup(app.bot)
-        await app.run_polling()
+    app.post_init = startup_notify
 
-    asyncio.run(run())
+    print("🤖 Bot đang chạy...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
